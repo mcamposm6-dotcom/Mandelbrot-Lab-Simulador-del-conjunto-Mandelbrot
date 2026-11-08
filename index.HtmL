@@ -1,0 +1,282 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MANDELBROT LAB | Simulador educativo</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="cabecera">
+    <div>
+      <small>LABORATORIO DE MATEMÁTICAS · UNEMI</small>
+      <h1>MANDELBROT <span>LAB</span></h1>
+    </div>
+    <p>Geometría fractal y números complejos</p>
+  </header>
+
+  <main class="contenedor">
+
+    <section class="tarjeta introduccion">
+      <div>
+        <span class="etiqueta">01 · CONOCE EL TEMA</span>
+        <h2>¿Qué son los fractales y el conjunto de Mandelbrot?</h2>
+        <p>
+          Los <strong>fractales</strong> son estructuras que presentan
+          detalles complejos al observarlas a diferentes escalas.
+          El <strong>conjunto de Mandelbrot</strong> reúne los números
+          complejos <em>c</em> para los que la sucesión
+          <strong>z<sub>n+1</sub> = z<sub>n</sub>² + c</strong>,
+          comenzando en <strong>z<sub>0</sub> = 0</strong>,
+          permanece acotada.
+        </p>
+        <p>
+          El simulador calcula cada punto del plano complejo.
+          Si durante el cálculo <strong>|z| &gt; 2</strong>,
+          ese punto no pertenece al conjunto.
+          Si no supera 2 en el número de iteraciones elegido,
+          se representa como
+          <em>no escapado en esta aproximación</em>.
+        </p>
+      </div>
+
+      <div class="formula">
+        <small>MODELO MATEMÁTICO</small>
+        <strong>z<sub>n+1</sub> = z<sub>n</sub>² + c</strong>
+        <span>x' = x² − y² + a</span>
+        <span>y' = 2xy + b</span>
+      </div>
+    </section>
+
+    <section class="principal">
+
+      <article class="tarjeta">
+        <div class="titulo-fila">
+          <div>
+            <span class="etiqueta">02 · SIMULACIÓN</span>
+            <h2>Explorador de Mandelbrot</h2>
+          </div>
+          <span id="estado" role="status">Listo para iniciar</span>
+        </div>
+
+        <div class="lienzo-contenedor" id="marco">
+          <canvas id="fractal"
+            aria-label="Visualización del conjunto de Mandelbrot">
+          </canvas>
+          <canvas id="marcador"
+            aria-label="Seleccionar punto del plano complejo">
+          </canvas>
+          <div class="ayuda-lienzo">
+            Clic: analizar punto · Arrastra: mover · Rueda: zoom
+          </div>
+        </div>
+
+        <div class="barra-progreso">
+          <div id="progreso"></div>
+        </div>
+
+        <div class="botonera">
+          <button id="iniciar" class="primario">
+            ▶ Iniciar simulación
+          </button>
+          <button id="pausar" disabled>
+            ⏸ Pausar
+          </button>
+          <button id="reiniciar">
+            ↺ Reiniciar
+          </button>
+          <button id="acercar">
+            ＋ Zoom
+          </button>
+          <button id="alejar">
+            − Zoom
+          </button>
+          <button id="png">
+            ↓ Guardar PNG
+          </button>
+        </div>
+
+        <div class="estadisticas">
+          <div>
+            <small>Ampliación</small>
+            <strong id="indicadorZoom">1.00×</strong>
+          </div>
+          <div>
+            <small>Centro real</small>
+            <strong id="indicadorReal">-0.5</strong>
+          </div>
+          <div>
+            <small>Centro imaginario</small>
+            <strong id="indicadorImag">0</strong>
+          </div>
+          <div>
+            <small>Avance</small>
+            <strong id="indicadorAvance">0 %</strong>
+          </div>
+        </div>
+      </article>
+
+      <aside class="tarjeta controles">
+        <span class="etiqueta">03 · VARIABLES</span>
+        <h2>Parámetros ajustables</h2>
+
+        <label for="iteraciones">
+          Iteraciones máximas:
+          <output id="valorIteraciones">150</output>
+        </label>
+        <input id="iteraciones"
+          type="range" min="30" max="600"
+          step="10" value="150">
+
+        <label for="calidad">Calidad de la imagen</label>
+        <select id="calidad">
+          <option value="0.5">Baja · rápida</option>
+          <option value="0.75" selected>Media</option>
+          <option value="1">Alta · detallada</option>
+        </select>
+
+        <label for="paleta">Paleta de colores</label>
+        <select id="paleta">
+          <option value="ocean">Océano</option>
+          <option value="fire">Fuego</option>
+          <option value="violet">Violeta</option>
+          <option value="mono">Blanco y negro</option>
+        </select>
+
+        <label>Centro del plano complejo</label>
+
+        <div class="dos-columnas">
+          <div>
+            <small>Parte real</small>
+            <input id="centroReal"
+              type="number" step="any" value="-0.5">
+          </div>
+          <div>
+            <small>Parte imaginaria</small>
+            <input id="centroImag"
+              type="number" step="any" value="0">
+          </div>
+        </div>
+
+        <button id="aplicarCentro" class="ancho">
+          Aplicar coordenadas
+        </button>
+
+        <p class="nota">
+          Modifica las variables y pulsa
+          <b>Iniciar simulación</b> para generar
+          una nueva imagen. Puedes pausar y
+          continuar el cálculo.
+        </p>
+      </aside>
+    </section>
+
+    <section class="inferior">
+
+      <article class="tarjeta">
+        <span class="etiqueta">04 · ANÁLISIS MATEMÁTICO</span>
+        <h2>Estudia un número complejo</h2>
+
+        <div class="dos-columnas">
+          <div>
+            <label for="puntoReal">Parte real (a)</label>
+            <input id="puntoReal"
+              type="number" step="any" value="-1">
+          </div>
+          <div>
+            <label for="puntoImag">Parte imaginaria (b)</label>
+            <input id="puntoImag"
+              type="number" step="any" value="0">
+          </div>
+        </div>
+
+        <button id="analizar" class="primario">
+          Analizar punto
+        </button>
+
+        <div id="resultado" class="resultado"
+          aria-live="polite">
+          Introduce un valor para conocer su comportamiento.
+        </div>
+
+        <div class="tabla-contenedor">
+          <table>
+            <thead>
+              <tr>
+                <th>n</th>
+                <th>Real</th>
+                <th>Imaginaria</th>
+                <th>|z|</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="tabla"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="tarjeta">
+        <span class="etiqueta">
+          05 · ACTIVIDAD PARA ESTUDIANTES
+        </span>
+        <h2>¿Escapa o no escapa?</h2>
+
+        <p>
+          Predice el comportamiento del número complejo
+          antes de comprobarlo. Son <b>3 desafíos</b>
+          sobre el modelo matemático.
+        </p>
+
+        <div class="actividad">
+          <div class="actividad-superior">
+            <span id="numeroPregunta">Pregunta 1 de 3</span>
+            <strong id="puntuacion">Aciertos: 0</strong>
+          </div>
+
+          <h3 id="pregunta">
+            ¿Qué ocurrirá con c = −1 + 0i?
+          </h3>
+
+          <label class="opcion">
+            <input type="radio"
+              name="respuesta" value="no">
+            No escapa durante las iteraciones
+          </label>
+
+          <label class="opcion">
+            <input type="radio"
+              name="respuesta" value="si">
+            Escapa y queda fuera del conjunto
+          </label>
+
+          <button id="comprobar" class="primario">
+            Comprobar respuesta
+          </button>
+
+          <div id="retroalimentacion"
+            class="retroalimentacion"
+            aria-live="polite">
+            Elige una respuesta para comenzar.
+          </div>
+
+          <button id="siguiente" disabled>
+            Siguiente pregunta →
+          </button>
+
+          <button id="repetir">
+            ↺ Repetir actividad
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <footer>
+      UNEMI · Recurso didáctico de Matemáticas ·
+      HTML, CSS y JavaScript
+    </footer>
+  </main>
+</body>
+</html>
+
