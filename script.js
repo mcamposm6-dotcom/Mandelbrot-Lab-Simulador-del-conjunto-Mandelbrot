@@ -1,554 +1,501 @@
 
+
+
 "use strict";
 
-// ==========================================
-// MANDELBROT LAB - SIMULADOR EDUCATIVO
-// ==========================================
+// =======================================
+// MANDELBROT LAB - SIMULADOR COMPLETO
+// =======================================
 
 const $ = id => document.getElementById(id);
 
-const fractal = $("fractal");
-const marcador = $("marcador");
+const canvas = $("fractal");
+const ctx = canvas.getContext("2d");
+const chart = $("grafica");
+const g = chart.getContext("2d");
 
-const ctx = fractal.getContext("2d", {
-  alpha: false
-});
+const W = canvas.width;
+const H = canvas.height;
 
-const pen = marcador.getContext("2d");
-
-// CONFIGURACIÓN INICIAL
-
-const inicial = {
-  cx: -0.5,
-  cy: 0,
-  span: 3.5,
-  maxIter: 150,
-  quality: 0.75,
-  palette: "ocean"
+const iniciales = {
+  iteraciones: 180,
+  zoom: 1,
+  centroReal: -0.5,
+  centroImag: 0,
+  calidad: 2,
+  paleta: "cosmica"
 };
 
-const s = {
-  ...inicial,
-  job: 0,
-  paused: false,
-  running: false,
-  continueJob: null,
-  selection: null,
-  pointer: null
-};
-
-// ==========================================
-// PALETAS DE COLORES
-// ==========================================
+let fase = "listo";
+let tarea = null;
+let frameId = null;
+let version = 0;
+let ultimaOrbita = [];
 
 const colores = {
-  ocean: [
-    [4, 10, 35],
-    [20, 55, 134],
-    [12, 181, 195],
-    [115, 234, 190],
-    [255, 239, 153]
+  cosmica: [
+    [18, 28, 76],
+    [65, 71, 185],
+    [148, 66, 226],
+    [250, 105, 164],
+    [255, 224, 145]
   ],
-  fire: [
-    [30, 5, 8],
-    [140, 28, 22],
-    [243, 95, 22],
-    [255, 195, 77],
-    [255, 245, 190]
+  oceano: [
+    [5, 24, 60],
+    [0, 90, 150],
+    [20, 167, 202],
+    [75, 229, 215],
+    [239, 255, 236]
   ],
-  violet: [
-    [15, 8, 40],
-    [68, 37, 156],
-    [144, 73, 211],
-    [246, 92, 187],
-    [252, 212, 240]
+  fuego: [
+    [29, 8, 22],
+    [155, 37, 31],
+    [247, 97, 25],
+    [255, 190, 69],
+    [255, 248, 197]
   ],
-  mono: [
-    [15, 22, 34],
-    [70, 83, 106],
-    [145, 164, 185],
-    [225, 234, 244],
+  grises: [
+    [20, 30, 45],
+    [70, 86, 109],
+    [137, 155, 174],
+    [204, 216, 230],
     [255, 255, 255]
   ]
 };
 
-// ==========================================
-// FUNCIONES AUXILIARES
-// ==========================================
+const limitar = (x, min, max) =>
+  Math.max(min, Math.min(x, max));
 
-function numero(v) {
-  return Number.isFinite(v)
-    ? Number(v.toPrecision(7)).toString()
-    : "No finito";
-}
+const fmt = x =>
+  Number.isFinite(x)
+    ? Number(x.toPrecision(6)).toString()
+    : "∞";
 
-function leer(id) {
-  const v = $(id).value.trim();
-  return v === "" ? NaN : Number(v);
-}
+// =======================================
+// PARÁMETROS Y DESLIZADORES
+// =======================================
 
-function ajustar() {
-  const r = fractal.getBoundingClientRect();
-  const dpr = Math.min(
-    window.devicePixelRatio || 1,
-    1.5
-  );
-
-  const w = Math.max(
-    2,
-    Math.round(r.width * dpr)
-  );
-
-  const h = Math.max(
-    2,
-    Math.round(r.height * dpr)
-  );
-
-  fractal.width = marcador.width = w;
-  fractal.height = marcador.height = h;
-}
-
-function limites() {
-  const hy = s.span / 2;
-  const hx = hy * fractal.width / fractal.height;
-
+function parametros() {
   return {
-    left: s.cx - hx,
-    top: s.cy + hy,
-    width: 2 * hx,
-    height: 2 * hy
+    maxIter: Number($("iteraciones").value),
+    zoom: Number($("zoom").value),
+    centroReal: Number($("centroReal").value),
+    centroImag: Number($("centroImag").value),
+    calidad: Number($("calidad").value),
+    paleta: $("paleta").value
   };
 }
 
-function aComplejo(px, py) {
-  const q = limites();
+function actualizarEtiquetas() {
+  $("vIteraciones").textContent =
+    $("iteraciones").value;
 
-  return {
-    a: q.left + px / fractal.width * q.width,
-    b: q.top - py / fractal.height * q.height
-  };
+  $("vZoom").textContent =
+    Number($("zoom").value).toFixed(2) + "×";
+
+  $("vReal").textContent =
+    Number($("centroReal").value).toFixed(2);
+
+  $("vImag").textContent =
+    Number($("centroImag").value).toFixed(2);
+
+  $("vCalidad").textContent = [
+    "",
+    "Rápida",
+    "Media",
+    "Alta"
+  ][Number($("calidad").value)];
 }
 
-function aPixel(a, b) {
-  const q = limites();
+// =======================================
+// CONTROL DE BOTONES
+// =======================================
 
-  return {
-    x: (a - q.left) / q.width * fractal.width,
-    y: (q.top - b) / q.height * fractal.height
-  };
+function actualizarBotones() {
+  $("iniciar").disabled = false;
+  $("pausar").disabled = fase !== "corriendo";
+  $("continuar").disabled = fase !== "pausado";
+
+  $("iniciar").textContent =
+    fase === "corriendo" || fase === "pausado"
+      ? "↻ Iniciar de nuevo"
+      : "▶ Iniciar simulación";
 }
 
-function posicion(e) {
-  const r = marcador.getBoundingClientRect();
+function actualizarProgreso(valor) {
+  const porcentaje = Math.round(valor * 100);
 
-  return {
-    x: (e.clientX - r.left) /
-       r.width * marcador.width,
+  $("porcentaje").textContent =
+    porcentaje + " %";
 
-    y: (e.clientY - r.top) /
-       r.height * marcador.height
-  };
+  $("barraProgreso").style.width =
+    porcentaje + "%";
 }
 
-function actualizar() {
-  $("indicadorZoom").textContent =
-    numero(3.5 / s.span) + "×";
-
-  $("indicadorReal").textContent = numero(s.cx);
-  $("indicadorImag").textContent = numero(s.cy);
-
-  $("centroReal").value = numero(s.cx);
-  $("centroImag").value = numero(s.cy);
-}
-
-// ==========================================
-// EJES Y MARCADOR DEL PUNTO
-// ==========================================
-
-function dibujarMarcador() {
-  pen.clearRect(
-    0,
-    0,
-    marcador.width,
-    marcador.height
-  );
-
-  const q = limites();
-
-  pen.save();
-
-  pen.strokeStyle = "rgba(255,255,255,.27)";
-  pen.lineWidth = 1;
-
-  // EJE VERTICAL
-
-  if (
-    q.left <= 0 &&
-    q.left + q.width >= 0
-  ) {
-    const x =
-      -q.left / q.width * marcador.width;
-
-    pen.beginPath();
-    pen.moveTo(x, 0);
-    pen.lineTo(x, marcador.height);
-    pen.stroke();
+function cancelarCalculo() {
+  if (frameId !== null) {
+    cancelAnimationFrame(frameId);
   }
 
-  // EJE HORIZONTAL
+  frameId = null;
+  version++;
+}
 
-  if (
-    q.top >= 0 &&
-    q.top - q.height <= 0
-  ) {
-    const y =
-      q.top / q.height * marcador.height;
+// =======================================
+// LIMPIAR Y REINICIAR
+// =======================================
 
-    pen.beginPath();
-    pen.moveTo(0, y);
-    pen.lineTo(marcador.width, y);
-    pen.stroke();
-  }
+function limpiarSimulador() {
+  cancelarCalculo();
 
-  // PUNTO SELECCIONADO
+  tarea = null;
+  fase = "listo";
 
-  if (s.selection) {
-    const p = aPixel(
-      s.selection.a,
-      s.selection.b
+  ctx.clearRect(0, 0, W, H);
+
+  $("aviso").classList.remove("oculto");
+  $("estado").textContent =
+    "Preparado para iniciar";
+
+  actualizarProgreso(0);
+  actualizarBotones();
+}
+
+function restablecerVariables() {
+  Object.entries(iniciales).forEach(([id, valor]) => {
+    $(id).value = valor;
+  });
+
+  actualizarEtiquetas();
+  limpiarSimulador();
+
+  $("mensajeVariables").textContent =
+    "Variables restablecidas. Pulsa Iniciar simulación.";
+}
+
+// =======================================
+// PLANO COMPLEJO
+// =======================================
+
+function pixelComplejo(px, py, w, h, p) {
+  const alto = 2.9 / p.zoom;
+  const ancho = alto * W / H;
+
+  return {
+    a: p.centroReal + (px / w - 0.5) * ancho,
+    b: p.centroImag + (0.5 - py / h) * alto
+  };
+}
+
+// =======================================
+// PALETAS Y COLORES
+// =======================================
+
+function colorFractal(n, modulo, paleta) {
+  const escala = colores[paleta];
+
+  const valor =
+    n + 1 -
+    Math.log2(
+      Math.max(
+        1e-12,
+        Math.log2(Math.max(2.000001, modulo))
+      )
     );
 
-    if (
-      p.x >= 0 &&
-      p.y >= 0 &&
-      p.x <= marcador.width &&
-      p.y <= marcador.height
-    ) {
-      pen.strokeStyle = "white";
-      pen.lineWidth = 2;
+  const pos =
+    (((valor * 0.03) % 1) + 1) % 1 *
+    (escala.length - 1);
 
-      pen.beginPath();
-      pen.arc(p.x, p.y, 8, 0, Math.PI * 2);
+  const i = Math.floor(pos);
+  const t = pos - i;
 
-      pen.moveTo(p.x - 12, p.y);
-      pen.lineTo(p.x + 12, p.y);
+  return escala[i].map((v, k) => {
+    const siguiente =
+      escala[Math.min(i + 1, escala.length - 1)][k];
 
-      pen.moveTo(p.x, p.y - 12);
-      pen.lineTo(p.x, p.y + 12);
+    return Math.round(v + (siguiente - v) * t);
+  });
+}
 
-      pen.stroke();
-    }
+// =======================================
+// INICIAR SIMULACIÓN
+// =======================================
+
+function iniciarSimulacion() {
+  cancelarCalculo();
+
+  const p = parametros();
+
+  const factores = {
+    1: 0.52,
+    2: 0.75,
+    3: 1
+  };
+
+  const factor = factores[p.calidad];
+  const w = Math.round(W * factor);
+  const h = Math.round(H * factor);
+
+  const buffer = document.createElement("canvas");
+
+  buffer.width = w;
+  buffer.height = h;
+
+  const bc = buffer.getContext("2d");
+
+  tarea = {
+    p,
+    w,
+    h,
+    buffer,
+    bc,
+    imagen: bc.createImageData(w, h),
+    fila: 0,
+    id: version
+  };
+
+  ctx.clearRect(0, 0, W, H);
+
+  $("aviso").classList.add("oculto");
+  $("estado").textContent = "Generando fractal...";
+
+  $("mensajeVariables").textContent =
+    "Calculando con los parámetros seleccionados.";
+
+  fase = "corriendo";
+
+  actualizarProgreso(0);
+  actualizarBotones();
+  programarBloque();
+}
+
+// =======================================
+// PROCESAMIENTO PROGRESIVO
+// =======================================
+
+function programarBloque() {
+  if (
+    fase !== "corriendo" ||
+    !tarea ||
+    frameId !== null
+  ) {
+    return;
   }
 
-  pen.restore();
-}
+  const trabajoActual = tarea;
 
-// ==========================================
-// COLORACIÓN DEL FRACTAL
-// ==========================================
+  frameId = requestAnimationFrame(() => {
+    frameId = null;
 
-function color(t) {
-  const c = colores[s.palette];
-
-  const v =
-    (((t % 1) + 1) % 1) *
-    (c.length - 1);
-
-  const i = Math.floor(v);
-  const f = v - i;
-
-  return [0, 1, 2].map(k =>
-    Math.round(
-      c[i][k] * (1 - f) +
-      c[Math.min(i + 1, c.length - 1)][k] * f
-    )
-  );
-}
-
-// ==========================================
-// BOTONES INICIAR, PAUSAR Y CONTINUAR
-// ==========================================
-
-function botones() {
-  $("iniciar").textContent = "▶ Iniciar simulación";
-
-  $("pausar").textContent = s.paused
-    ? "▶ Continuar"
-    : "⏸ Pausar";
-
-  $("pausar").disabled = !s.running;
-}
-
-// ==========================================
-// GENERAR EL CONJUNTO DE MANDELBROT
-// ==========================================
-
-function iniciar() {
-  const token = ++s.job;
-
-  s.running = true;
-  s.paused = false;
-  s.continueJob = null;
-
-  ajustar();
-  actualizar();
-  dibujarMarcador();
-  botones();
-
-  const w = Math.max(
-    80,
-    Math.floor(fractal.width * s.quality)
-  );
-
-  const h = Math.max(
-    80,
-    Math.floor(fractal.height * s.quality)
-  );
-
-  const tmp = document.createElement("canvas");
-  tmp.width = w;
-  tmp.height = h;
-
-  const tmpCtx = tmp.getContext("2d");
-  const imagen = tmpCtx.createImageData(w, h);
-  const pixels = imagen.data;
-
-  const q = limites();
-
-  let fila = 0;
-
-  const comienzo = performance.now();
-
-  $("estado").textContent = "Calculando...";
-  $("progreso").style.width = "0%";
-  $("indicadorAvance").textContent = "0 %";
-
-  // EL CÁLCULO SE DIVIDE EN BLOQUES
-  // PARA PERMITIR PAUSAR LA SIMULACIÓN
-
-  function bloque() {
-    if (token !== s.job) return;
-
-    if (s.paused) {
-      s.continueJob = bloque;
-      return;
+    if (
+      fase === "corriendo" &&
+      tarea === trabajoActual &&
+      tarea.id === version
+    ) {
+      procesarBloque();
     }
+  });
+}
 
-    const limite = Math.min(fila + 6, h);
+function procesarBloque() {
+  if (fase !== "corriendo" || !tarea) return;
 
-    for (; fila < limite; fila++) {
+  const t = tarea;
+  const primeraFila = t.fila;
+  const inicio = performance.now();
 
-      const b =
-        q.top -
-        (fila + 0.5) / h * q.height;
+  while (
+    t.fila < t.h &&
+    t.fila - primeraFila < 2 &&
+    performance.now() - inicio < 9
+  ) {
+    const py = t.fila;
 
-      for (let columna = 0; columna < w; columna++) {
+    for (let px = 0; px < t.w; px++) {
+      const { a, b } = pixelComplejo(
+        px + 0.5,
+        py + 0.5,
+        t.w,
+        t.h,
+        t.p
+      );
 
-        const a =
-          q.left +
-          (columna + 0.5) / w * q.width;
+      let x = 0;
+      let y = 0;
+      let x2 = 0;
+      let y2 = 0;
+      let n = 0;
 
-        // VALORES INICIALES z0 = 0
+      while (
+        n < t.p.maxIter &&
+        x2 + y2 <= 4
+      ) {
+        const nx = x2 - y2 + a;
+        const ny = 2 * x * y + b;
 
-        let x = 0;
-        let y = 0;
+        x = nx;
+        y = ny;
+        x2 = x * x;
+        y2 = y * y;
 
-        let x2 = 0;
-        let y2 = 0;
+        n++;
+      }
 
-        let n = 0;
-
-        // ECUACIÓN:
-        // z(n+1) = z(n)^2 + c
-
-        while (
-          n < s.maxIter &&
-          x2 + y2 <= 4
-        ) {
-
-          const ny = 2 * x * y + b;
-          const nx = x2 - y2 + a;
-
-          x = nx;
-          y = ny;
-
-          x2 = x * x;
-          y2 = y * y;
-
-          n++;
-        }
-
-        const p =
-          (fila * w + columna) * 4;
-
-        let rgb;
-
-        // INTERIOR DEL CONJUNTO
-
-        if (
-          n === s.maxIter &&
-          x2 + y2 <= 4
-        ) {
-
-          rgb = [5, 10, 21];
-
-        } else {
-
-          // COLORACIÓN SUAVE DE LA REGIÓN EXTERIOR
-
-          const mag = Math.sqrt(x2 + y2);
-
-          const suave =
-            n + 1 -
-            Math.log2(
-              Math.max(
-                0.000001,
-                Math.log2(
-                  Math.max(mag, 2.000001)
-                )
-              )
+      const color =
+        n === t.p.maxIter && x2 + y2 <= 4
+          ? [4, 9, 22]
+          : colorFractal(
+              n,
+              Math.hypot(x, y),
+              t.p.paleta
             );
 
-          rgb = color(suave * 0.035);
-        }
+      const k = (py * t.w + px) * 4;
 
-        pixels[p] = rgb[0];
-        pixels[p + 1] = rgb[1];
-        pixels[p + 2] = rgb[2];
-        pixels[p + 3] = 255;
-      }
+      t.imagen.data[k] = color[0];
+      t.imagen.data[k + 1] = color[1];
+      t.imagen.data[k + 2] = color[2];
+      t.imagen.data[k + 3] = 255;
     }
 
-    // MOSTRAR EL AVANCE EN EL LIENZO
+    t.fila++;
+  }
 
-    tmpCtx.putImageData(imagen, 0, 0);
+  // Mostrar solamente las filas ya calculadas.
+  if (t.fila > primeraFila) {
+    const cantidad = t.fila - primeraFila;
 
-    ctx.fillStyle = "#050a15";
-
-    ctx.fillRect(
+    t.bc.putImageData(
+      t.imagen,
       0,
       0,
-      fractal.width,
-      fractal.height
+      0,
+      primeraFila,
+      t.w,
+      cantidad
     );
 
     ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(
-      tmp,
+      t.buffer,
       0,
+      primeraFila,
+      t.w,
+      cantidad,
       0,
-      fractal.width,
-      fractal.height
+      primeraFila / t.h * H,
+      W,
+      cantidad / t.h * H
     );
-
-    const porcentaje =
-      Math.round(fila / h * 100);
-
-    $("progreso").style.width =
-      porcentaje + "%";
-
-    $("indicadorAvance").textContent =
-      porcentaje + " %";
-
-    if (fila < h) {
-
-      requestAnimationFrame(bloque);
-
-    } else {
-
-      s.running = false;
-      s.continueJob = null;
-
-      $("estado").textContent =
-        "Finalizada en " +
-        Math.round(performance.now() - comienzo) +
-        " ms";
-
-      botones();
-    }
   }
 
-  requestAnimationFrame(bloque);
+  actualizarProgreso(t.fila / t.h);
+
+  if (t.fila >= t.h) {
+    fase = "terminado";
+    tarea = null;
+
+    $("estado").textContent =
+      "Fractal terminado · 100 %";
+
+    actualizarBotones();
+  } else {
+    $("estado").textContent =
+      `Generando... fila ${t.fila} de ${t.h}`;
+
+    programarBloque();
+  }
 }
 
-// ==========================================
-// ZOOM DEL PLANO COMPLEJO
-// ==========================================
+// =======================================
+// PAUSAR Y CONTINUAR
+// =======================================
 
-function zoom(
-  factor,
-  x = fractal.width / 2,
-  y = fractal.height / 2
-) {
+function pausarSimulacion() {
+  if (fase !== "corriendo") return;
 
-  const antes = aComplejo(x, y);
+  fase = "pausado";
 
-  s.span = Math.min(
-    8,
-    Math.max(
-      1e-10,
-      s.span / factor
-    )
-  );
+  if (frameId !== null) {
+    cancelAnimationFrame(frameId);
+    frameId = null;
+  }
 
-  const despues = aComplejo(x, y);
+  $("estado").textContent =
+    "⏸ Simulación pausada";
 
-  s.cx += antes.a - despues.a;
-  s.cy += antes.b - despues.b;
-
-  iniciar();
+  actualizarBotones();
 }
 
-// ==========================================
-// REINICIAR SIMULADOR
-// ==========================================
+function continuarSimulacion() {
+  if (fase !== "pausado" || !tarea) return;
 
-function reiniciar() {
-  Object.assign(s, inicial);
+  fase = "corriendo";
 
-  s.job++;
-  s.running = false;
-  s.paused = false;
-  s.continueJob = null;
-  s.selection = null;
+  $("estado").textContent =
+    "▶ Continuando simulación";
 
-  $("iteraciones").value = s.maxIter;
-
-  $("valorIteraciones").textContent = s.maxIter;
-
-  $("calidad").value = s.quality;
-  $("paleta").value = s.palette;
-
-  $("estado").textContent = "Listo para iniciar";
-
-  $("progreso").style.width = "0%";
-
-  $("indicadorAvance").textContent = "0 %";
-
-  ajustar();
-
-  ctx.fillStyle = "#050a15";
-
-  ctx.fillRect(
-    0,
-    0,
-    fractal.width,
-    fractal.height
-  );
-
-  actualizar();
-  dibujarMarcador();
-  botones();
+  actualizarBotones();
+  programarBloque();
 }
 
-// ==========================================
-// CÁLCULO DE UNA ÓRBITA
-// ==========================================
+// =======================================
+// CONTROLES DEL SIMULADOR
+// =======================================
 
-function orbita(a, b, max) {
+$("iniciar").addEventListener(
+  "click",
+  iniciarSimulacion
+);
+
+$("pausar").addEventListener(
+  "click",
+  pausarSimulacion
+);
+
+$("continuar").addEventListener(
+  "click",
+  continuarSimulacion
+);
+
+$("reiniciar").addEventListener(
+  "click",
+  limpiarSimulador
+);
+
+$("restablecerVariables").addEventListener(
+  "click",
+  restablecerVariables
+);
+
+for (const id of [
+  "iteraciones",
+  "zoom",
+  "centroReal",
+  "centroImag",
+  "calidad",
+  "paleta"
+]) {
+  $(id).addEventListener("input", () => {
+    actualizarEtiquetas();
+    limpiarSimulador();
+
+    $("mensajeVariables").textContent =
+      "Variables modificadas. Pulsa Iniciar " +
+      "para generar una nueva imagen.";
+  });
+}
+
+// =======================================
+// ÓRBITA DE UN NÚMERO COMPLEJO
+// =======================================
+
+function orbita(a, b, maxIter) {
   let x = 0;
   let y = 0;
+  let escape = null;
 
   const filas = [{
     n: 0,
@@ -557,10 +504,7 @@ function orbita(a, b, max) {
     m: 0
   }];
 
-  let escape = null;
-
-  for (let n = 1; n <= max; n++) {
-
+  for (let n = 1; n <= maxIter; n++) {
     const nx = x * x - y * y + a;
     const ny = 2 * x * y + b;
 
@@ -571,630 +515,587 @@ function orbita(a, b, max) {
 
     filas.push({ n, x, y, m });
 
-    if (
-      m > 2 ||
-      !Number.isFinite(m)
-    ) {
+    if (m > 2 || !Number.isFinite(m)) {
       escape = n;
       break;
     }
   }
 
-  return {
-    filas,
-    escape
-  };
+  return { filas, escape };
 }
 
-// ==========================================
-// ANALIZAR UN PUNTO COMPLEJO
-// ==========================================
+// =======================================
+// ANÁLISIS Y TABLA
+// =======================================
 
-function analizar(a, b) {
-
+function analizarPunto(a, b) {
   if (
     !Number.isFinite(a) ||
     !Number.isFinite(b)
   ) {
-
     $("resultado").textContent =
-      "Ingresa números válidos para a y b.";
-
+      "Introduce números válidos.";
     return;
   }
-
-  const r = orbita(a, b, s.maxIter);
-
-  s.selection = { a, b };
 
   $("puntoReal").value = a;
   $("puntoImag").value = b;
 
+  const r = orbita(
+    a,
+    b,
+    Number($("iteraciones").value)
+  );
+
+  ultimaOrbita = r.filas;
+
   $("resultado").textContent =
-    "c = " +
-    numero(a) +
-    (b < 0 ? " − " : " + ") +
-    numero(Math.abs(b)) +
-    "i. " +
-    (
-      r.escape !== null
-        ? "Escapó en la iteración " +
-          r.escape +
-          "; no pertenece al conjunto."
-        : "No escapó en " +
-          s.maxIter +
-          " iteraciones. No se puede asegurar pertenencia exacta."
-    );
+    r.escape === null
+      ? `c = ${fmt(a)} ${
+          b < 0 ? "−" : "+"
+        } ${fmt(Math.abs(b))}i: no escapó durante ` +
+        "las iteraciones calculadas."
 
-  const cuerpo = $("tabla");
+      : `c = ${fmt(a)} ${
+          b < 0 ? "−" : "+"
+        } ${fmt(Math.abs(b))}i: escapó en ` +
+        `la iteración ${r.escape}.`;
 
-  cuerpo.replaceChildren();
+  const fragmento = document.createDocumentFragment();
 
-  const vista = r.filas.length > 31
-    ? [
-        ...r.filas.slice(0, 12),
-        ...r.filas.slice(-15)
-      ]
-    : r.filas;
-
-  for (const f of vista) {
-
+  for (const fila of r.filas) {
     const tr = document.createElement("tr");
 
-    const estado =
-      f.m > 2
-        ? "Escapó"
-        : "No escapó";
-
-    const valores = [
-      f.n,
-      numero(f.x),
-      numero(f.y),
-      numero(f.m),
-      estado
-    ];
-
-    for (const value of valores) {
-
+    for (const valor of [
+      fila.n,
+      fila.x,
+      fila.y,
+      fila.m
+    ]) {
       const td = document.createElement("td");
-
-      td.textContent = value;
-
+      td.textContent = fmt(valor);
       tr.appendChild(td);
     }
 
-    cuerpo.appendChild(tr);
+    fragmento.appendChild(tr);
   }
 
-  dibujarMarcador();
+  $("tabla").replaceChildren(fragmento);
+
+  $("interpretacion").textContent =
+    r.escape === null
+      ? "El módulo no superó el radio 2 durante " +
+        "las iteraciones calculadas."
+      : `La órbita supera el radio 2 en n = ${r.escape}.`;
+
+  dibujarGrafica();
 }
 
-// ==========================================
-// ACTIVIDAD EDUCATIVA PARA ESTUDIANTES
-// ==========================================
+// =======================================
+// GRÁFICA DE |z_n| FRENTE A n
+// =======================================
 
-const preguntas = [
+function dibujarGrafica() {
+  const w = chart.width;
+  const h = chart.height;
+
+  const L = 55;
+  const R = 22;
+  const T = 25;
+  const B = 44;
+
+  g.fillStyle = "#071424";
+  g.fillRect(0, 0, w, h);
+
+  if (!ultimaOrbita.length) return;
+
+  const maxN = Math.max(
+    1,
+    ultimaOrbita[ultimaOrbita.length - 1].n
+  );
+
+  const maxValor = Math.max(
+    ...ultimaOrbita.map(f =>
+      Number.isFinite(f.m) ? f.m : 20
+    )
+  );
+
+  const maxY = Math.max(
+    3,
+    Math.min(20, Math.ceil(maxValor))
+  );
+
+  const X = n =>
+    L + n / maxN * (w - L - R);
+
+  const Y = m =>
+    h - B -
+    limitar(m, 0, maxY) / maxY * (h - T - B);
+
+  g.font = "12px Arial";
+  g.lineWidth = 1;
+
+  // Cuadrícula y valores del eje vertical
+  for (let i = 0; i <= 4; i++) {
+    const valor = maxY * i / 4;
+    const y = Y(valor);
+
+    g.strokeStyle = "#29445e";
+    g.beginPath();
+    g.moveTo(L, y);
+    g.lineTo(w - R, y);
+    g.stroke();
+
+    g.fillStyle = "#d8e8f7";
+    g.fillText(fmt(valor), 5, y + 4);
+  }
+
+  // Etiquetas del eje horizontal
+  g.fillStyle = "#d8e8f7";
+
+  for (let i = 0; i <= 5; i++) {
+    const n = Math.round(maxN * i / 5);
+
+    g.fillText(
+      String(n),
+      X(n) - 8,
+      h - 24
+    );
+  }
+
+  g.fillText(
+    "n (iteración)",
+    w / 2 - 35,
+    h - 7
+  );
+
+  g.fillText("|zₙ|", 8, 16);
+
+  // Radio de escape |z| = 2
+  g.strokeStyle = "#ff6c7d";
+  g.setLineDash([7, 5]);
+
+  g.beginPath();
+  g.moveTo(L, Y(2));
+  g.lineTo(w - R, Y(2));
+  g.stroke();
+
+  g.setLineDash([]);
+
+  // Curva
+  g.strokeStyle = "#55eada";
+  g.lineWidth = 2.5;
+  g.beginPath();
+
+  ultimaOrbita.forEach((fila, i) => {
+    const x = X(fila.n);
+
+    const y = Y(
+      Number.isFinite(fila.m)
+        ? fila.m
+        : maxY
+    );
+
+    if (i === 0) {
+      g.moveTo(x, y);
+    } else {
+      g.lineTo(x, y);
+    }
+  });
+
+  g.stroke();
+}
+
+// =======================================
+// DESCARGAR PNG Y CSV
+// =======================================
+
+function descargar(elemento, nombre) {
+  const enlace = document.createElement("a");
+
+  enlace.download = nombre;
+  enlace.href = elemento.toDataURL("image/png");
+  enlace.click();
+}
+
+$("guardar").addEventListener("click", () => {
+  descargar(canvas, "mandelbrot.png");
+});
+
+$("guardarGrafica").addEventListener("click", () => {
+  descargar(chart, "grafica_mandelbrot.png");
+});
+
+$("csv").addEventListener("click", () => {
+  if (!ultimaOrbita.length) return;
+
+  const filas = [
+    "n,Real,Imaginaria,Modulo",
+    ...ultimaOrbita.map(f =>
+      `${f.n},${f.x},${f.y},${f.m}`
+    )
+  ];
+
+  const blob = new Blob(
+    ["\uFEFF" + filas.join("\r\n")],
+    { type: "text/csv;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+
+  enlace.href = url;
+  enlace.download = "mandelbrot_iteraciones.csv";
+  enlace.click();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// =======================================
+// SELECCIONAR PUNTOS
+// =======================================
+
+$("analizar").addEventListener("click", () => {
+  const textoA = $("puntoReal").value.trim();
+  const textoB = $("puntoImag").value.trim();
+
+  analizarPunto(
+    textoA === "" ? NaN : Number(textoA),
+    textoB === "" ? NaN : Number(textoB)
+  );
+});
+
+document.querySelectorAll(".caso").forEach(boton => {
+  boton.addEventListener("click", () => {
+    analizarPunto(Number(boton.dataset.real), 0);
+  });
+});
+
+canvas.addEventListener("click", e => {
+  if (fase !== "terminado") return;
+
+  const rect = canvas.getBoundingClientRect();
+
+  const px =
+    (e.clientX - rect.left) / rect.width * W;
+
+  const py =
+    (e.clientY - rect.top) / rect.height * H;
+
+  const c = pixelComplejo(
+    px,
+    py,
+    W,
+    H,
+    parametros()
+  );
+
+  analizarPunto(c.a, c.b);
+});
+
+// =======================================
+// ACTIVIDAD DIDÁCTICA FINAL
+// =======================================
+
+const bancoActividad = [
   {
-    a: -1,
-    b: 0,
-    texto: "¿Qué ocurrirá con c = −1 + 0i?",
+    texto:
+      "¿Qué ecuación genera el conjunto de Mandelbrot?",
+
+    opciones: [
+      "z(n+1) = z(n) + c",
+      "z(n+1) = z(n)² + c",
+      "z(n+1) = 2z(n) + c",
+      "z(n+1) = c²"
+    ],
+
+    respuesta: 1,
+
     explicacion:
-      "La sucesión alterna entre 0 y −1; permanece acotada."
+      "Se utiliza la relación z(n+1) = z(n)² + c, " +
+      "comenzando en z(0) = 0."
   },
   {
-    a: 1,
-    b: 0,
-    texto: "¿Qué ocurrirá con c = 1 + 0i?",
+    texto:
+      "¿Qué significa que |zₙ| sea mayor que 2?",
+
+    opciones: [
+      "El punto pertenece al conjunto",
+      "La órbita se hace cero",
+      "La órbita escapa y el punto está fuera del conjunto",
+      "La ecuación deja de funcionar"
+    ],
+
+    respuesta: 2,
+
     explicacion:
-      "La sucesión es 0, 1, 2, 5...; escapa en n = 3."
+      "Cuando el módulo supera 2, el punto no " +
+      "pertenece al conjunto de Mandelbrot."
   },
   {
-    a: 0,
-    b: 0,
-    texto: "¿Qué ocurrirá con c = 0 + 0i?",
+    texto:
+      "Si c = 0 y z₀ = 0, ¿qué ocurre?",
+
+    opciones: [
+      "La sucesión permanece en cero",
+      "La órbita escapa en n = 3",
+      "La sucesión crece sin límite",
+      "Los valores alternan entre 1 y 2"
+    ],
+
+    respuesta: 0,
+
     explicacion:
-      "Todos los términos son cero; no escapa."
+      "Todos los términos permanecen iguales a cero."
+  },
+  {
+    texto:
+      "¿Para qué sirve aumentar las iteraciones máximas?",
+
+    opciones: [
+      "Para modificar la ecuación",
+      "Para detectar puntos que escapan más tarde",
+      "Para eliminar la parte imaginaria",
+      "Para asegurar que todos los puntos pertenecen"
+    ],
+
+    respuesta: 1,
+
+    explicacion:
+      "Más iteraciones permiten reconocer escapes tardíos."
+  },
+  {
+    texto:
+      "¿Qué permite observar el deslizador de zoom?",
+
+    opciones: [
+      "Un cambio en la ecuación",
+      "Un nuevo radio de escape",
+      "La desaparición de los números complejos",
+      "Detalles del fractal a escalas menores"
+    ],
+
+    respuesta: 3,
+
+    explicacion:
+      "El zoom permite explorar estructuras " +
+      "del fractal a distintas escalas."
   }
 ];
 
-let indice = 0;
-let aciertos = 0;
-let respondida = false;
+let indiceActividad = 0;
+let puntosActividad = 0;
+let intentosActividad = 0;
+let preguntaResuelta = false;
 
 // MOSTRAR PREGUNTA
 
 function mostrarPregunta() {
+  const pregunta = bancoActividad[indiceActividad];
 
-  const p = preguntas[indice];
+  intentosActividad = 0;
+  preguntaResuelta = false;
 
-  $("numeroPregunta").textContent =
-    "Pregunta " +
-    (indice + 1) +
-    " de " +
-    preguntas.length;
+  $("contadorActividad").textContent =
+    `Pregunta ${indiceActividad + 1} de ` +
+    bancoActividad.length;
 
-  $("puntuacion").textContent =
-    "Aciertos: " + aciertos;
+  $("preguntaActividad").textContent =
+    pregunta.texto;
 
-  $("pregunta").textContent = p.texto;
+  $("notaActividad").textContent =
+    `${puntosActividad}/10`;
 
-  document.querySelectorAll(
-    'input[name="respuesta"]'
-  ).forEach(r => {
+  $("avanceActividad").style.width =
+    `${indiceActividad / bancoActividad.length * 100}%`;
 
-    r.checked = false;
-    r.disabled = false;
+  $("retroActividad").textContent =
+    "Selecciona una respuesta y pulsa Comprobar.";
+
+  $("resumenActividad").hidden = true;
+
+  $("comprobarActividad").disabled = false;
+  $("siguienteActividad").disabled = true;
+
+  const contenedor = $("opcionesActividad");
+  contenedor.replaceChildren();
+
+  pregunta.opciones.forEach((opcion, i) => {
+    const etiqueta = document.createElement("label");
+    etiqueta.className = "opcion-actividad";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "respuestaActividad";
+    radio.value = String(i);
+
+    const texto = document.createElement("span");
+    texto.textContent = opcion;
+
+    etiqueta.append(radio, texto);
+    contenedor.appendChild(etiqueta);
   });
-
-  respondida = false;
-
-  $("comprobar").disabled = false;
-  $("siguiente").disabled = true;
-
-  $("retroalimentacion").textContent =
-    "Selecciona una respuesta y compruébala.";
 }
 
 // COMPROBAR RESPUESTA
 
-function comprobar() {
+function comprobarRespuesta() {
+  if (preguntaResuelta) return;
 
-  if (respondida) return;
-
-  const elegida = document.querySelector(
-    'input[name="respuesta"]:checked'
+  const seleccion = document.querySelector(
+    'input[name="respuestaActividad"]:checked'
   );
 
-  if (!elegida) {
-
-    $("retroalimentacion").textContent =
-      "Primero selecciona una respuesta.";
-
+  if (!seleccion) {
+    $("retroActividad").textContent =
+      "Debes seleccionar una respuesta.";
     return;
   }
 
-  const p = preguntas[indice];
+  const pregunta = bancoActividad[indiceActividad];
+  const respuesta = Number(seleccion.value);
+  const etiqueta = seleccion.closest("label");
 
-  const calculo = orbita(
-    p.a,
-    p.b,
-    Math.max(30, s.maxIter)
-  );
+  if (respuesta === pregunta.respuesta) {
+    preguntaResuelta = true;
 
-  const esperada =
-    calculo.escape === null
-      ? "no"
-      : "si";
+    const premio =
+      intentosActividad === 0 ? 2 : 1;
 
-  const correcto =
-    elegida.value === esperada;
+    puntosActividad += premio;
 
-  if (correcto) {
-    aciertos++;
-  }
+    etiqueta.classList.add("correcta");
 
-  $("retroalimentacion").textContent =
-    (
-      correcto
-        ? "¡Correcto! "
-        : "Respuesta incorrecta. "
-    ) +
-    p.explicacion;
+    $("retroActividad").textContent =
+      `¡Correcto! +${premio} punto(s). ` +
+      pregunta.explicacion;
 
-  $("puntuacion").textContent =
-    "Aciertos: " + aciertos;
+  } else {
+    intentosActividad++;
 
-  respondida = true;
+    etiqueta.classList.add("incorrecta");
+    seleccion.disabled = true;
+    seleccion.checked = false;
 
-  $("comprobar").disabled = true;
-
-  document.querySelectorAll(
-    'input[name="respuesta"]'
-  ).forEach(r => {
-    r.disabled = true;
-  });
-
-  $("siguiente").disabled = false;
-
-  $("siguiente").textContent =
-    indice === preguntas.length - 1
-      ? "Ver resultado final"
-      : "Siguiente pregunta →";
-}
-
-// ==========================================
-// EVENTOS DE LOS BOTONES
-// ==========================================
-
-// INICIAR SIMULACIÓN
-
-$("iniciar").addEventListener(
-  "click",
-  iniciar
-);
-
-// PAUSAR O CONTINUAR SIMULACIÓN
-
-$("pausar").addEventListener(
-  "click",
-  () => {
-
-    if (!s.running) return;
-
-    s.paused = !s.paused;
-
-    if (s.paused) {
-
-      $("estado").textContent =
-        "Simulación pausada";
-
-    } else {
-
-      $("estado").textContent =
-        "Continuando...";
-
-      if (s.continueJob) {
-
-        const tarea = s.continueJob;
-
-        s.continueJob = null;
-
-        requestAnimationFrame(tarea);
-      }
-    }
-
-    botones();
-  }
-);
-
-// REINICIAR
-
-$("reiniciar").addEventListener(
-  "click",
-  reiniciar
-);
-
-// ZOOM
-
-$("acercar").addEventListener(
-  "click",
-  () => zoom(2)
-);
-
-$("alejar").addEventListener(
-  "click",
-  () => zoom(0.5)
-);
-
-// ITERACIONES
-
-$("iteraciones").addEventListener(
-  "input",
-  e => {
-
-    $("valorIteraciones").textContent =
-      e.target.value;
-  }
-);
-
-$("iteraciones").addEventListener(
-  "change",
-  e => {
-
-    s.maxIter = Number(e.target.value);
-
-    if (
-      s.running ||
-      $("indicadorAvance").textContent !== "0 %"
-    ) {
-      iniciar();
-    }
-  }
-);
-
-// CALIDAD
-
-$("calidad").addEventListener(
-  "change",
-  e => {
-
-    s.quality = Number(e.target.value);
-
-    iniciar();
-  }
-);
-
-// PALETA
-
-$("paleta").addEventListener(
-  "change",
-  e => {
-
-    s.palette = e.target.value;
-
-    iniciar();
-  }
-);
-
-// APLICAR COORDENADAS
-
-$("aplicarCentro").addEventListener(
-  "click",
-  () => {
-
-    const a = leer("centroReal");
-    const b = leer("centroImag");
-
-    if (
-      !Number.isFinite(a) ||
-      !Number.isFinite(b)
-    ) {
-
-      alert(
-        "Escribe coordenadas numéricas válidas."
-      );
-
+    if (intentosActividad === 1) {
+      $("retroActividad").textContent =
+        "Respuesta incorrecta. Tienes una segunda " +
+        "oportunidad por 1 punto.";
       return;
     }
 
-    s.cx = a;
-    s.cy = b;
+    preguntaResuelta = true;
 
-    iniciar();
+    $("retroActividad").textContent =
+      "Respuesta correcta: " +
+      pregunta.opciones[pregunta.respuesta] +
+      ". " +
+      pregunta.explicacion;
+
+    $("opcionesActividad")
+      .children[pregunta.respuesta]
+      .classList.add("correcta");
   }
-);
 
-// ANALIZAR PUNTO
+  $("notaActividad").textContent =
+    `${puntosActividad}/10`;
 
-$("analizar").addEventListener(
-  "click",
-  () => {
+  $("comprobarActividad").disabled = true;
+  $("siguienteActividad").disabled = false;
 
-    analizar(
-      leer("puntoReal"),
-      leer("puntoImag")
-    );
-  }
-);
+  document.querySelectorAll(
+    'input[name="respuestaActividad"]'
+  ).forEach(radio => {
+    radio.disabled = true;
+  });
+}
 
-// ACTIVIDAD: COMPROBAR
+// SIGUIENTE PREGUNTA
 
-$("comprobar").addEventListener(
-  "click",
-  comprobar
-);
+function siguientePregunta() {
+  if (!preguntaResuelta) return;
 
-// ACTIVIDAD: SIGUIENTE PREGUNTA
-
-$("siguiente").addEventListener(
-  "click",
-  () => {
-
-    if (indice < preguntas.length - 1) {
-
-      indice++;
-
-      mostrarPregunta();
-
-    } else {
-
-      $("retroalimentacion").textContent =
-        "Actividad terminada: " +
-        aciertos +
-        " de " +
-        preguntas.length +
-        " respuestas correctas.";
-
-      $("siguiente").disabled = true;
-    }
-  }
-);
-
-// ACTIVIDAD: REPETIR
-
-$("repetir").addEventListener(
-  "click",
-  () => {
-
-    indice = 0;
-    aciertos = 0;
-
+  if (indiceActividad < bancoActividad.length - 1) {
+    indiceActividad++;
     mostrarPregunta();
+    return;
   }
-);
 
-// ==========================================
-// DESCARGAR IMAGEN PNG
-// ==========================================
+  finalizarActividad();
+}
 
-$("png").addEventListener(
+// RESULTADO FINAL
+
+function finalizarActividad() {
+  $("avanceActividad").style.width = "100%";
+
+  $("contadorActividad").textContent =
+    "Actividad finalizada";
+
+  $("preguntaActividad").textContent =
+    "¡Has completado el desafío Mandelbrot!";
+
+  $("opcionesActividad").replaceChildren();
+
+  $("comprobarActividad").disabled = true;
+  $("siguienteActividad").disabled = true;
+
+  const resumen = $("resumenActividad");
+  resumen.hidden = false;
+
+  resumen.textContent =
+    `Calificación final: ${puntosActividad}/10. ` +
+    (
+      puntosActividad >= 7
+        ? "Buen trabajo. Has comprendido " +
+          "los conceptos principales."
+        : "Vuelve a experimentar con los deslizadores, " +
+          "analiza la gráfica y repite la actividad."
+    );
+
+  $("retroActividad").textContent =
+    "Puedes repetir la actividad para mejorar tu nota.";
+}
+
+// REPETIR ACTIVIDAD
+
+function repetirActividad() {
+  indiceActividad = 0;
+  puntosActividad = 0;
+  intentosActividad = 0;
+  preguntaResuelta = false;
+
+  mostrarPregunta();
+}
+
+// BOTONES DEL CUESTIONARIO
+
+$("comprobarActividad").addEventListener(
   "click",
-  () => {
-
-    const salida =
-      document.createElement("canvas");
-
-    salida.width = fractal.width;
-    salida.height = fractal.height;
-
-    const c = salida.getContext("2d");
-
-    c.drawImage(fractal, 0, 0);
-    c.drawImage(marcador, 0, 0);
-
-    const enlace =
-      document.createElement("a");
-
-    enlace.href =
-      salida.toDataURL("image/png");
-
-    enlace.download =
-      "mandelbrot-lab.png";
-
-    enlace.click();
-  }
+  comprobarRespuesta
 );
 
-// ==========================================
-// ZOOM CON RUEDA DEL RATÓN
-// ==========================================
-
-marcador.addEventListener(
-  "wheel",
-  e => {
-
-    e.preventDefault();
-
-    const p = posicion(e);
-
-    zoom(
-      e.deltaY < 0 ? 1.5 : 1 / 1.5,
-      p.x,
-      p.y
-    );
-  },
-  { passive: false }
+$("siguienteActividad").addEventListener(
+  "click",
+  siguientePregunta
 );
 
-// ==========================================
-// ARRASTRAR EL FRACTAL
-// ==========================================
-
-marcador.addEventListener(
-  "pointerdown",
-  e => {
-
-    marcador.setPointerCapture(
-      e.pointerId
-    );
-
-    s.pointer = {
-      id: e.pointerId,
-      x: e.clientX,
-      y: e.clientY,
-      cx: s.cx,
-      cy: s.cy,
-      moved: false
-    };
-  }
+$("repetirActividad").addEventListener(
+  "click",
+  repetirActividad
 );
 
-marcador.addEventListener(
-  "pointermove",
-  e => {
+// =======================================
+// ESTADO INICIAL
+// =======================================
 
-    const p = s.pointer;
+// La imagen NO se dibuja automáticamente.
+actualizarEtiquetas();
+limpiarSimulador();
 
-    if (
-      !p ||
-      p.id !== e.pointerId
-    ) return;
+// La gráfica espera a que se analice un punto.
+g.fillStyle = "#071424";
+g.fillRect(0, 0, chart.width, chart.height);
 
-    const dx = e.clientX - p.x;
-    const dy = e.clientY - p.y;
-
-    if (
-      Math.abs(dx) + Math.abs(dy) > 5
-    ) {
-      p.moved = true;
-    }
-
-    if (!p.moved) return;
-
-    const rect =
-      marcador.getBoundingClientRect();
-
-    s.cx =
-      p.cx -
-      dx / rect.width *
-      s.span *
-      fractal.width / fractal.height;
-
-    s.cy =
-      p.cy +
-      dy / rect.height *
-      s.span;
-
-    actualizar();
-    dibujarMarcador();
-  }
-);
-
-// SOLTAR EL RATÓN
-
-marcador.addEventListener(
-  "pointerup",
-  e => {
-
-    const p = s.pointer;
-
-    if (
-      !p ||
-      p.id !== e.pointerId
-    ) return;
-
-    s.pointer = null;
-
-    if (p.moved) {
-
-      iniciar();
-
-    } else {
-
-      const xy = posicion(e);
-
-      const c = aComplejo(
-        xy.x,
-        xy.y
-      );
-
-      analizar(c.a, c.b);
-    }
-  }
-);
-
-marcador.addEventListener(
-  "pointercancel",
-  () => {
-    s.pointer = null;
-  }
-);
-
-// ==========================================
-// ADAPTACIÓN AL CAMBIAR EL TAMAÑO
-// ==========================================
-
-let resizeTimer;
-
-window.addEventListener(
-  "resize",
-  () => {
-
-    clearTimeout(resizeTimer);
-
-    resizeTimer = setTimeout(
-      () => {
-
-        if (
-          s.running ||
-          $("indicadorAvance").textContent !== "0 %"
-        ) {
-
-          iniciar();
-
-        } else {
-
-          reiniciar();
-        }
-      },
-      200
-    );
-  }
-);
-
-// ==========================================
-// INICIALIZAR PROYECTO
-// ==========================================
-
-reiniciar();
+// Mostrar primera pregunta del cuestionario.
 mostrarPregunta();

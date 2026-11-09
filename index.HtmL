@@ -1,0 +1,347 @@
+
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MANDELBROT LAB | Simulador interactivo</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="script.js" defer></script>
+</head>
+<body>
+  <header class="encabezado">
+    <div class="marca">M</div>
+    <div>
+      <small>LABORATORIO MATEMÁTICO · UNEMI</small>
+      <h1>MANDELBROT <span>LAB</span></h1>
+    </div>
+  </header>
+
+  <main>
+    <section class="presentacion">
+      <small>GEOMETRÍA FRACTAL · NÚMEROS COMPLEJOS</small>
+      <h2>Explora el conjunto de Mandelbrot</h2>
+      <p>Modifica las variables y pulsa
+        <strong>Iniciar simulación</strong>
+        para construir la imagen paso a paso.
+      </p>
+    </section>
+
+    <div class="principal">
+      <section class="panel">
+        <div class="titulo-panel">
+          <h3>01 · Visualización</h3>
+          <span id="estado" role="status" aria-live="polite">
+            Preparado para iniciar
+          </span>
+        </div>
+
+        <div class="lienzo">
+          <canvas
+            id="fractal"
+            width="720"
+            height="450"
+            aria-label="Conjunto de Mandelbrot">
+          </canvas>
+
+          <div id="aviso" class="aviso">
+            Pulsa «Iniciar simulación» para generar el fractal
+          </div>
+        </div>
+
+        <div class="estado-progreso">
+          <span>Progreso de generación</span>
+          <strong id="porcentaje">0 %</strong>
+        </div>
+
+        <div class="barra">
+          <div id="barraProgreso"></div>
+        </div>
+
+        <div class="botones">
+          <button id="iniciar" class="primario">
+            ▶ Iniciar simulación
+          </button>
+          <button id="pausar" disabled>⏸ Pausar</button>
+          <button id="continuar" disabled>▶ Continuar</button>
+          <button id="reiniciar">↺ Reiniciar</button>
+          <button id="guardar">↓ Guardar imagen</button>
+        </div>
+
+        <p class="ayuda">
+          Durante la generación puedes pausar y continuar.
+          Al finalizar, haz clic sobre el fractal
+          para analizar un punto.
+        </p>
+      </section>
+
+      <aside class="panel controles">
+        <h3>02 · Variables del simulador</h3>
+
+        <div class="control">
+          <label for="iteraciones">
+            Iteraciones máximas
+            <output id="vIteraciones">180</output>
+          </label>
+          <input
+            id="iteraciones"
+            type="range"
+            min="20"
+            max="600"
+            step="10"
+            value="180">
+        </div>
+
+        <div class="control">
+          <label for="zoom">
+            Acercamiento (zoom)
+            <output id="vZoom">1.0×</output>
+          </label>
+          <input
+            id="zoom"
+            type="range"
+            min="1"
+            max="8"
+            step="0.25"
+            value="1">
+        </div>
+
+        <div class="control">
+          <label for="centroReal">
+            Centro: parte real
+            <output id="vReal">-0.50</output>
+          </label>
+          <input
+            id="centroReal"
+            type="range"
+            min="-2"
+            max="1"
+            step="0.05"
+            value="-0.5">
+        </div>
+
+        <div class="control">
+          <label for="centroImag">
+            Centro: parte imaginaria
+            <output id="vImag">0.00</output>
+          </label>
+          <input
+            id="centroImag"
+            type="range"
+            min="-1.2"
+            max="1.2"
+            step="0.05"
+            value="0">
+        </div>
+
+        <div class="control">
+          <label for="calidad">
+            Resolución de cálculo
+            <output id="vCalidad">Media</output>
+          </label>
+          <input
+            id="calidad"
+            type="range"
+            min="1"
+            max="3"
+            step="1"
+            value="2">
+        </div>
+
+        <div class="control">
+          <label for="paleta">Colores</label>
+          <select id="paleta">
+            <option value="cosmica">Cósmica</option>
+            <option value="oceano">Océano</option>
+            <option value="fuego">Fuego</option>
+            <option value="grises">Escala de grises</option>
+          </select>
+        </div>
+
+        <p id="mensajeVariables" class="ayuda">
+          Puedes ajustar estas variables antes de iniciar.
+        </p>
+
+        <button id="restablecerVariables" class="ancho">
+          Restablecer variables
+        </button>
+      </aside>
+    </div>
+
+    <div class="analisis">
+      <section class="panel">
+        <h3>03 · Tabla de iteraciones</h3>
+        <p>
+          Analiza un número complejo <strong>c = a + bi</strong>.
+        </p>
+
+        <div class="entradas">
+          <label>
+            Parte real (a)
+            <input
+              id="puntoReal"
+              type="number"
+              step="any"
+              value="1">
+          </label>
+
+          <label>
+            Parte imaginaria (b)
+            <input
+              id="puntoImag"
+              type="number"
+              step="any"
+              value="0">
+          </label>
+        </div>
+
+        <div class="botones">
+          <button id="analizar" class="primario">
+            Analizar punto
+          </button>
+          <button class="caso" data-real="0">c = 0</button>
+          <button class="caso" data-real="-1">c = −1</button>
+          <button class="caso" data-real="1">c = 1</button>
+          <button id="csv">↓ Exportar CSV</button>
+        </div>
+
+        <p id="resultado" class="resultado">
+          Selecciona un caso o pulsa «Analizar punto».
+        </p>
+
+        <div class="tabla-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>n</th>
+                <th>Real</th>
+                <th>Imaginaria</th>
+                <th>|zₙ|</th>
+              </tr>
+            </thead>
+            <tbody id="tabla"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h3>04 · Gráfica de las iteraciones</h3>
+        <p>
+          Evolución de <strong>|zₙ|</strong>
+          frente a <strong>n</strong>.
+          La línea roja marca el radio de escape 2.
+        </p>
+
+        <canvas
+          id="grafica"
+          width="600"
+          height="350"
+          aria-label="Gráfica del módulo de z por iteración">
+        </canvas>
+
+        <p id="interpretacion" class="resultado">
+          Al analizar un punto aparecerá su gráfica.
+        </p>
+
+        <button id="guardarGrafica">
+          ↓ Guardar gráfica
+        </button>
+      </section>
+    </div>
+
+    <section class="panel teoria">
+      <h3>05 · ¿Qué es el conjunto de Mandelbrot?</h3>
+      <p>
+        El conjunto de Mandelbrot reúne los valores complejos
+        <strong>c</strong> para los cuales la sucesión que
+        comienza en <strong>z₀ = 0</strong> y sigue la regla
+        <strong>zₙ₊₁ = zₙ² + c</strong> permanece acotada.
+
+        Si en alguna iteración se cumple
+        <strong>|zₙ| &gt; 2</strong>, el punto está fuera
+        del conjunto.
+
+        No superar ese radio durante un número finito de
+        iteraciones no demuestra la pertenencia exacta.
+      </p>
+    </section>
+
+    <!-- ACTIVIDAD AL FINAL DE LA DEFINICIÓN -->
+    <section
+      class="panel actividad-final"
+      id="actividadFinal"
+      aria-labelledby="tituloActividad">
+
+      <div class="actividad-cabecera">
+        <div>
+          <span class="subtitulo-actividad">
+            06 · PON A PRUEBA TUS CONOCIMIENTOS
+          </span>
+          <h3 id="tituloActividad">
+            Desafío interactivo de Mandelbrot
+          </h3>
+          <p>
+            Responde cinco preguntas después de explorar
+            el simulador. Tienes dos intentos por pregunta.
+          </p>
+        </div>
+
+        <div class="marcador-nota">
+          Calificación
+          <strong id="notaActividad">0/10</strong>
+        </div>
+      </div>
+
+      <div class="barra-actividad" aria-hidden="true">
+        <div id="avanceActividad"></div>
+      </div>
+
+      <p id="contadorActividad" class="contador-actividad">
+        Pregunta 1 de 5
+      </p>
+
+      <h4 id="preguntaActividad"></h4>
+
+      <div
+        id="opcionesActividad"
+        class="opciones-actividad"
+        role="radiogroup"
+        aria-label="Respuestas disponibles">
+      </div>
+
+      <p
+        id="retroActividad"
+        class="resultado"
+        role="status"
+        aria-live="polite">
+        Elige una respuesta.
+      </p>
+
+      <div class="botones">
+        <button id="comprobarActividad" class="primario">
+          Comprobar respuesta
+        </button>
+
+        <button id="siguienteActividad" disabled>
+          Siguiente →
+        </button>
+
+        <button id="repetirActividad">
+          ↺ Repetir actividad
+        </button>
+      </div>
+
+      <div
+        id="resumenActividad"
+        class="resultado resumen-actividad"
+        hidden>
+      </div>
+    </section>
+
+    <footer>
+      MANDELBROT LAB · Proyecto educativo de Matemáticas
+    </footer>
+  </main>
+</body>
+</html>
